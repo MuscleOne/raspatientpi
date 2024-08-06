@@ -1,0 +1,24 @@
+{% extends "www/base.html" %}
+
+{% load crispy_forms_tags %}
+
+{% block content %}
+    <h1 class="mb-4">{% if object %}Edit a scenario{% else %}Create a scenario{% endif %}</h1>
+
+    <form method="post" class="mb-4">
+        {% csrf_token %}
+        {{ form|crispy }}
+        <div class="row">
+            <div class="col">
+                <button type="submit" class="btn btn-success" formaction="{{ request.path }}">{% if object %}<i class="fas fa-save"></i> Save{% else %}<i class="fas fa-plus"></i> Add{% endif %}</button>
+            </div>
+            <div class="col text-center">
+                {% if object %}<a class="btn btn-info" href="{% url "scenario_play" object.id %}"><i class="fa-solid fa-play"></i> Play</a>{% endif %}
+            </div>
+            <div class="col text-end">
+                {% if object %}<button type="submit" class="btn btn-danger" formaction="{% url "scenario_delete" object.id %}"><i class="fa-solid fa-trash-can"></i> Delete</button>{% endif %}
+            </div>
+        </div>
+    </form>
+
+{% endblock %}

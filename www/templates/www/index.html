@@ -1,0 +1,20 @@
+{% extends "www/base.html" %}
+
+{% block content %}
+    <h1>
+        Scenarios
+
+        <a class="btn btn-success float-end" href="{% url "scenario_create" %}"><i class="fas fa-plus"></i> Add</a>
+    </h1>
+
+    <div class="list-group mt-4">
+        {% for scenario in scenarios %}
+            <a href="{% url "scenario_edit" scenario.pk %}" class="list-group-item list-group-item-action" aria-current="true">
+                <div class="d-flex w-100 justify-content-between">
+                    <h5 class="mb-1">{{ scenario }}</h5>
+                </div>
+                <p class="mb-1">{{ scenario.description|linebreaks }}</p>
+            </a>
+        {% endfor %}
+    </div>
+{% endblock %}

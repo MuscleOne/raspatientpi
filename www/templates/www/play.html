@@ -1,0 +1,220 @@
+{% extends "www/base.html" %}
+
+{% load crispy_forms_tags %}
+
+{% block styles %}
+    <style>
+        #avatar { 
+            border: 1px solid #ccc;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div id="app">
+        <h1 class="mb-4">Play scenario: <small class="text-muted">[[ scenario.name ]]</small></h1>
+        <p><b>Prompt:</b> <i>[[ scenario.description ]]</i></p>
+        
+        <form class="mx-auto w-50 mb-5">
+            <div class="text-center">
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" id="use_avatar" value="1">
+                    <label class="form-check-label" for="use_avatar">With avatar</label>
+                </div>
+
+                <button type="button" class="btn btn-success" id="play"><i class="fa-solid fa-play"></i> Play</button>
+            </div>
+        </form>
+
+        <div class="row">
+            <div class="col d-none">
+                <div id="avatar" class="w-100 h-100"></div>
+            </div>
+            <div class="col">
+                <div id="messages">
+                    <div v-for="message in messages" :class="{'bubble': true, 'bubble-left': message.sender.toLowerCase() != 'you', 'bubble-right': message.sender.toLowerCase() == 'you'}">
+                        <small class="d-block"><strong>[[ message.sender ]]</strong></small>
+                        [[ message.message ]]
+                    </div>
+                </div>            
+            </div>
+        </div>
+        <div id="loading" class="text-center text-muted pt-3"></div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        
+</script>
+
+<script type="importmap">
+    { "imports":
+        {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js/+esm",
+            "three/examples/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/",
+            "dompurify": "https://cdn.jsdelivr.net/npm/dompurify@3.0.6/+esm",
+            "marked": "https://cdn.jsdelivr.net/npm/marked@11.2.0/+esm",
+            "talkinghead": "https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@1.1/modules/talkinghead.mjs"
+        }
+    }
+</script>
+
+<script type="module">
+    import { TalkingHead } from "talkinghead";
+  
+    let app; // Vue instance
+    let head; // TalkingHead instance
+
+    let avatar_models = {
+        'male': { 'id': '662e84c952f42ad18e4ac12d', voice: 'onyx', body: 'M' },
+        'female': { 'id': '662e84973db7393b7cf42ade', voice: 'nova', body: 'F' }
+    }
+
+    async function initTalkingHead() {
+        let model = avatar_models[app.scenario.gender];
+
+        // Instantiate the class
+        const nodeAvatar = document.getElementById('avatar');
+        head = new TalkingHead(nodeAvatar, {
+            ttsEndpoint: "https://", // TTS not initialized as not needed here
+            cameraView: "head"
+        });
+
+        // Load and show the avatar
+        const nodeLoading = document.getElementById('loading');
+        try {
+            await head.showAvatar({
+                url: 'https://models.readyplayer.me/' + model.id + '.glb?morphTargets=ARKit,Oculus+Visemes,mouthOpen,mouthSmile,eyesClosed,eyesLookUp,eyesLookDown&textureSizeLimit=1024&textureFormat=png',
+                body: model.body,
+                avatarMood: 'neutral', 
+                lipsyncLang: 'en'
+            }, (ev) => {
+                if(ev.lengthComputable) {
+                    let val = Math.min(100,Math.round(ev.loaded/ev.total * 100 ));
+                    nodeLoading.textContent = "Loading " + val + "%";
+                }
+            });
+            //head.setMood("fear"); // "neutral", "happy", "angry", "sad", "fear", "disgust", "love", "sleep"
+            nodeLoading.style.display = 'none';
+        } catch(error) {
+            console.log(error);
+            nodeLoading.textContent = error.toString();
+        }
+    }
+    
+    async function speak(data) {
+        let response = await fetch(data.file);
+        let arraybuffer = await response.arrayBuffer();
+        let audiobuffer = await head.audioCtx.decodeAudioData(arraybuffer);
+
+        // TalkingHead audio object
+        let audio = {
+            audio: audiobuffer,
+            words: [],
+            wtimes: [],
+            wdurations: [],
+            markers: [],
+            mtimes: []
+        };
+
+        // Add words to the audio object
+        data.words.forEach( x => {
+            audio.words.push( x.word );
+            audio.wtimes.push( 1000 * x.start - 150 );
+            audio.wdurations.push( 1000 * (x.end - x.start) );
+        });
+
+        // Callback function to make the avatar look at the camera
+        const startSegment = async () => {
+            head.lookAtCamera(500);
+            head.speakWithHands();
+        };
+
+        // Add timed callback markers to the audio object
+        data.segments.forEach( x => {
+            if ( x.start > 2 && x.text.length > 10 ) {
+                audio.markers.push( startSegment );
+                audio.mtimes.push( 1000 * x.start - 1000 );
+            }
+        });
+
+        // TODO: Sentiment analysis of text to set the mood to any of the following: "neutral", "happy", "angry", "sad", "fear", "disgust", "love", "sleep"
+        //head.setMood();
+        head.speakAudio(audio, {'lipsyncLang': data.language});
+    }
+
+    $(function() {
+        const { createApp, ref } = Vue
+
+        app = createApp({
+            delimiters: ['[[', ']]'],
+            data() {
+                return {
+                    scenario: ref({}),
+                    messages: ref([])
+                }
+            },
+            async created() {
+                try {
+                    const response = await fetch('{% url "api_scenario" pk=scenario_id %}');
+                    const data = await response.json();
+                    this.scenario = data;
+                } catch (error) {
+                    console.error('Error fetching scenario:', error);
+                }
+            }
+        }).mount('#app');
+
+        const messages = $("#messages");
+
+        $("#play").click(function() {
+            var use_avatar = $("#use_avatar").is(":checked");
+            var voice = app.scenario.gender == 'male' ? 'onyx' : 'nova';
+
+            if(use_avatar) {
+                $("#avatar").parent().removeClass("d-none");
+                initTalkingHead();
+            }
+
+            $(this).prop("disabled", true).removeClass('btn-success').addClass('btn-danger').html('<i class="fa-solid fa-circle"></i> Playing ...').addClass("pulse");
+
+            const mqtt_client = mqtt.connect('ws://' + location.hostname + ':9001/mqtt');
+
+            mqtt_client.on('connect', function() {
+                mqtt_client.subscribe('simul/raspatientpi', function (err) {
+                    if(!err) {
+                        console.log('Subscribed to MQTT topic!');
+                    } else {
+                        console.log('Subscription error: ' + err);
+                    }
+                });
+            });
+
+            mqtt_client.on('message', function(topic, message) {
+                var data = JSON.parse(message.toString());
+                console.log(data);
+                app.messages.push(data);
+
+                messages.scrollTop(messages.prop("scrollHeight") - 50);
+
+                if(use_avatar && data.additional_data) {
+                    speak(data.additional_data);
+                }
+            });
+
+            $.ajax({
+                url: "{% url "api_play" %}",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({ voice: voice, scenario: app.scenario.id, use_avatar: use_avatar }),
+                success: function(data) {
+                    $("#play").prop("disabled", false).addClass('btn-success').removeClass('btn-danger').html('<i class="fa-solid fa-play"></i> Play').removeClass("pulse");
+                    mqtt_client.end();
+                },
+            });
+        });
+    });
+</script>
+{% endblock %}
